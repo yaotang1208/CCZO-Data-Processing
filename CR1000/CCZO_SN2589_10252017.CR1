@@ -1,0 +1,235 @@
+'CCZO CR1000 SN 2589 data logger program
+'Sep. 20 for CCZO CR1000
+'contributer: Yao Tang, tangyao1208@gatech.edu
+'The following sensors are measured
+'Sensor		count         description
+'HFP01            3      	soil heat flux
+'CS616            3		water content reflectometer
+'107L		  3		soil temperature'
+'
+'****Station Constants.
+Const Scan_interval = 1  'scan interval 1 s
+Const Output_interval = 1 'output interval 1 min
+Dim ii As Long                                           'Slow sequence scan index variable.
+'*** Wiring Instructions***
+'****HFP01 Wiring instructions***
+Const SHF_ANALOG_INPUT = 1          'Unique differential analog input channel.
+Const NMBR_SHF = 3                  'Unique number of HFP01 to measure.
+'at 2cm depth
+'1H HFP01 #1 signal (white)            
+'1L HFP01 #1 signal reference (green)
+'gnd HFP01 #1 shield (clear)
+
+'at 15cm depth
+'2H HFP01 #2 signal (white)
+'2L HFP01 #2 signal reference (green)
+'gnd HFP01 #2 shield (clear)
+
+'at 40cm depth
+'3H HFP01 #3 signal (white)
+'3L HFP01 #3 signal reference (green)
+'gnd HFP01 #3 shield (clear)
+
+'*** End of HFP01 wiring ***
+
+'*** CS616 wiring ***
+Const CS616_ANALOG_INPUT = 9       'Unique single-ended analog input channel.
+Const CS616_POWER_CTRL = 1          'Unique control port.
+Const NMBR_CS616 = 3                'Unique number of CS616 to measure.
+'*** Beginning of CS616 wiring ***
+'SE9 (5H)      Signal #1 (green)   2cm
+'SE10(5L)      Signal #2 (green)   15cm
+'SE11(6H)      Signal #3 (green)   40cm
+'C2      Power control #1 (orange)
+'C4      Power control #2 (orange)
+'C6      Power control #3 (orange)
+'G       Shield #1 (clear)
+'        Shield #2 (clear)
+'	 Shield #3 (clear)
+'12V     Power #1 (red)
+'        Power #2 (red)
+'	 Power #3 (red)
+'G       Signal reference #1 (black)
+'        Signal reference #2 (black)
+'        Signal reference #3 (black)
+'*** End of CS616 wiring ***
+
+'****107 L temperature probe ***
+Const S107L_VxINPUT = Vx1
+Const S107L_SEINPUT = 14 '7L
+Const NMBR_S107L = 3
+'1st 107 L 2cm
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX1
+' Red            Analog-voltage output                     SE14 (7L)
+' Purple         Bridge-resistor ground                    AG*14
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'2nd 107 L 15cm
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX2
+' Red            Analog-voltage output                     SE15 (8H)
+' Purple         Bridge-resistor ground                    AG*15
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'3rd 107 L 40cm
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX3
+' Red            Analog-voltage output                     SE16 (8L)
+' Purple         Bridge-resistor ground                    AG*16
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'*** End of 107L wiring ***
+
+'Wiring Diagram
+'==============
+'CS215
+' Wire
+' Color Function CR1000
+' ----- -------- -------
+' Red Power (12V) 12V
+' Green SDI-12 signal C1 C3 C5 (High to Low, C5 install two, change C7 wire to C5)
+' Black Power ground G
+' White Power ground G
+' Clear Shield Signal Ground
+
+'*** Constants ***
+'*** Beginning of CS616 constants and variables ***
+Public cs616_wcr(NMBR_CS616)           'Water content reflectometer period.
+Public soil_water(NMBR_CS616)        'Volumetric soil water content with temperature correction.
+'Dim cs616_T(NMBR_CS616)                'Water content reflectometer period with temperature correction.
+Units cs616_wcr = uSeconds
+Units soil_water = frac_v_wtr
+'CS616 Default Calibration Constants
+const a0= -0.0663
+const a1= -0.0063
+const a2= 0.0007
+'*** End of CS616 constants and variables ***
+
+'*** Beginning of HFP01 constants and variables ***
+Public shf(NMBR_SHF)                   'HFP01 soil heat flux plates.
+Dim shf_cal(NMBR_SHF)
+Units shf = W/m^2
+Const HFP01_CAL_1 = 1000/59.68 'Unique multiplier for HFP01 #1. 1000/sensitivity (1000/67.1)
+Const HFP01_CAL_2 = 1000/61.89 'Unique multiplier for HFP01 #2. 1000/sensitivity (1000/67.0)
+Const HFP01_CAL_3 = 1000/59.6 'Unique multiplier for HFP01 #1. 1000/sensitivity (1000/67.1)
+'Const HFP01_CAL_2 = 14.92 'Unique multiplier for HFP01 #2. 1000/sensitivity (1000/67.0)
+'*** End of HFP01 constants and variables ***
+
+'*** Beginning of 107 constants and variables ***
+Public T107_C(NMBR_S107L)
+'*** End of 107 constants and variables ***
+'Declare the variable array for the measurement
+Public TRH1(2)
+Alias TRH1(1)=AirTC1
+Alias TRH1(2)=RH1
+Units AirTC1=Deg C
+Units RH1=%
+
+
+'Declare the variable array for the measurement
+Public TRH3(2)
+Alias TRH3(1)=AirTC3
+Alias TRH3(2)=RH3
+Units AirTC3=Deg C
+Units RH3=%
+
+'Declare the variable array for the measurement
+Public TRH5(2)
+Alias TRH5(1)=AirTC5
+Alias TRH5(2)=RH5
+Units AirTC5=Deg C
+Units RH5=%
+
+
+'Declare the variable array for the measurement
+Public TRH7(2)
+Alias TRH7(1)=AirTC7
+Alias TRH7(2)=RH7
+Units AirTC7=Deg C
+Units RH7=%
+
+'****''''''''''''''''''''''Tables''''''''''''''''''''''''''''****
+'*** Output data tables ***
+
+DataTable (SN2589,TRUE,-1)
+'CardOut(0,-1)
+  DataInterval (0,OUTPUT_INTERVAL,Min,0)
+  TableFile ("CRD:SN2589",8,1000,0,7,Day,0,0)
+
+  '*** Beginning of CS215 output data ***
+   Average(1,AirTC1,FP2,False)
+   Sample(1,RH1,FP2)
+   Average(1,AirTC3,FP2,False)
+   Sample(1,RH3,FP2)
+   Average(1,AirTC5,FP2,False)
+   Sample(1,RH5,FP2)
+   Average(1,AirTC7,FP2,False)
+   Sample(1,RH7,FP2)
+  '*** End of CS215 output data ***
+
+  'CS616 and Soil heat flux
+  '*** Beginning of CS616 output data ***
+  Average (NMBR_CS616,soil_water(1),IEEE4,0)
+  Average (NMBR_CS616,cs616_wcr(1),IEEE4,0)
+  '*** End of CS616 output data ***
+  
+  '*** Beginning of HFP01 output data ***
+  Average (NMBR_SHF,shf(1),IEEE4,0)
+  '*** End of HFP01 output data ***
+
+  '*** Beginning of S107L output data ***
+  Average(NMBR_S107L,T107_C(1),IEEE4,0)
+  '*** End of S107L output data ***
+
+EndTable
+'*** End of data tables ***
+
+'*** Program ***
+BeginProg
+
+'Load the HFP01 factory calibration.
+ shf_cal(1) = HFP01_CAL_1
+ shf_cal(2) = HFP01_CAL_2
+ shf_cal(3) = HFP01_CAL_3
+
+ Scan (5,Sec,3,0)
+
+    '*** Beginning of CS616 measurements ***
+    CS616 (cs616_wcr(1),1,9,2,1,1,0)
+    CS616 (cs616_wcr(2),1,10,4,1,1,0)
+    CS616 (cs616_wcr(3),1,11,6,1,1,0)
+    'Apply temperature correction to CS616 period and find volumetric water content.
+    For ii = 1 To NMBR_CS616 'NMBR_TCAV must equal NMBR_CS616   
+        soil_water(ii) = -0.0663+cs616_wcr(ii)*(-0.0063+cs616_wcr(ii)*0.0007)
+    Next ii
+    
+    '*** Beginning of HFP01 measurements ***
+    VoltDiff (shf(1),NMBR_SHF,AutoRange,SHF_ANALOG_INPUT,TRUE,200,250,shf_cal(),0)
+    '*** End of HFP01 measurements ***
+    '*** End of CS616 and HFP01 measurements ****
+
+    '*** Beginning of 107L measurements ***
+    'Const S107L_VxINPUT = Vx3
+    'Const S107L_SEINPUT = 39
+    Therm107(T107_C(1),1,14,Ex1,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(2),1,15,Ex2,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(3),1,16,Ex3,0,_60Hz,1.0,0.0)
+    '*** End of 107L measurements ***
+	'CS215 Temperature & Relative Humidity Sensor measurements 'AirTC' and 'RH'
+ 	SDI12Recorder(TRH1(),1,"0","M!",1,0)
+	 SDI12Recorder(TRH3(),3,"0","M!",1,0)
+ 	SDI12Recorder(TRH5(),5,"1","M!",1,0)
+ 	SDI12Recorder(TRH7(),5,"0","M!",1,0)
+ 	'SDI12Recorder(Dest,SDIPort,SDIAddress,"SDICommand",Multiplier,Offset)
+ 	'Call Data Tables and Store Data
+ 	CallTable(SN2589)
+	'CallTable(SN2589_backup)
+ NextScan
+EndProg 

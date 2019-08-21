@@ -1,0 +1,247 @@
+'CCZO CR1000 SN 12211 data logger program
+'Mar 9, 2018. The old soil temperature at top does not function. Add a new one.
+'Dec 1, 2017 for CCZO CR1000 at Cropland
+'contributer: Yao Tang, tangyao1208@gatech.edu
+'The following sensors are measured
+'Sensor		count         description
+'CS616            4		water content reflectometer
+'107L		  6		soil temperature'
+'107L		  1             soil temperature, added on Mar 10 2018
+'CS215		  1		Air temperature and RH
+'TB4		  1	        Precipitation
+'
+
+'****Station Constants.
+Const Scan_interval = 1  'scan interval 1 s
+Const Output_interval = 1 'output interval 1 min
+Dim ii As Long                                           'Slow sequence scan index variable.
+'*** Wiring Instructions***
+'*** CS616 wiring ***
+Const CS616_ANALOG_INPUT = 1       'Unique single-ended analog input channel.
+Const CS616_POWER_CTRL = 1          'Unique control port.
+Const NMBR_CS616 = 5                'Unique number of CS616 to measure.
+'*** Beginning of CS616 wiring ***
+'SE1(1H)      Signal #1 (green)
+'SE2(1L)      Signal #2 (green)
+'SE3(2H)      Signal #3 (green)
+'SE4(2L)      Signal #4 (green)
+'SE5(3H)      Signal #5 (green) (Not Installed)
+'SE6(3L)      Signal #6 (green) (Not installed)
+'C1      Power control #1 (orange)
+'C2      Power control #2 (orange)
+'C3      Power control #3 (orange)
+'C4      Power control #4 (orange)
+'C5      Power control #5 (orange)
+'C6      Power control #6 (orange)
+'G       Shield #1 (clear)
+'        Shield #2 (clear)
+'	 Shield #3 (clear)
+'G       Shield #4 (clear)
+'        Shield #5 (clear)
+'	 Shield #6 (clear)
+'12V     Power #1 (red)
+'        Power #2 (red)
+'	 Power #3 (red)
+'12V     Power #4 (red)
+'        Power #5 (red)
+'	 Power #6 (red)
+'G       Signal reference #1 (black)
+'        Signal reference #2 (black)
+'        Signal reference #3 (black)
+'G       Signal reference #4 (black)
+'        Signal reference #5 (black)
+'        Signal reference #6 (black)
+'*** End of CS616 wiring ***
+
+'****107 L temperature probe ***
+Const S107L_ExINPUT = Ex1 
+'Ex1 for 1 and 2
+'Ex2 for 3 and 4
+'Ex3 for 5 , 6, and 7
+Const S107L_SEINPUT = 9 '5H
+Const NMBR_S107L = 7
+'1st 107 L
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX1
+' Red            Analog-voltage output                     SE9 (5H)
+' Purple         Bridge-resistor ground                    AG*9
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'2nd 107 L
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX1
+' Red            Analog-voltage output                     SE10 (5L)
+' Purple         Bridge-resistor ground                    AG*10
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'3rd 107 L
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX2
+' Red            Analog-voltage output                     SE11 (6H)
+' Purple         Bridge-resistor ground                    AG*11
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'4th 107 L
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX2
+' Red            Analog-voltage output                     SE12 (6L)
+' Purple         Bridge-resistor ground                    AG*12
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'5th 107 L
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX3
+' Red            Analog-voltage output                     SE13 (7H)
+' Purple         Bridge-resistor ground                    AG*13
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+'6th 107 L
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX3
+' Red            Analog-voltage output                     SE14 (7L)
+' Purple         Bridge-resistor ground                    AG*14
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+
+'7th 107 L
+' Wire
+' Color           Function                              CR1000
+' -----           --------                              ------
+' Black          Voltage-excitation input                  EX3
+' Red            Analog-voltage output                     SE15 (8H)
+' Purple         Bridge-resistor ground                    AG*15
+' Clear          Shield                                     G*
+'*AG = Analog Ground (represented by ground symbol on CR1000 wiring panel
+
+
+'*** End of 107L wiring ***
+
+'**** CS215***
+Const CS215_C_INPUT = 7         'Unique differential analog input channel.
+'*** Beginning of CS215 (1)wiring ***
+' Color   Function           CR3000
+' -----   --------           -------
+' Red     Power (12V)         12V
+' Green   SDI-12 signal       C7
+' Black   Power ground         G
+' White   Power ground         G
+' Clear   Shield          Signal Ground (C1 Ground)
+
+'****SENSOR_TB4*** 
+
+Const TB4_INPUT = 1         'P1
+'*** Beginning of TB4 wiring ***
+' Color   Function                   Pulse Channel CR1000
+' -----   --------                       -------
+' Black   Rain signal                       P1
+' White  Rain signal reference              AG
+' Clear  Shield                             AG
+'*** End of TB4 wiring ***
+
+'*** Constants ***
+'*** Beginning of CS616 constants and variables ***
+Public cs616_wcr(NMBR_CS616)           'Water content reflectometer period.
+Public soil_water(NMBR_CS616)        'Volumetric soil water content with temperature correction.
+Units cs616_wcr = uSeconds
+Units soil_water = frac_v_wtr
+'CS616 Default Calibration Constants
+const a0= -0.0663
+const a1= -0.0063
+const a2= 0.0007
+'*** End of CS616 constants and variables ***
+
+'*** Beginning of 107 constants and variables ***
+Public T107_C(NMBR_S107L)
+'*** End of 107 constants and variables ***
+
+'*** Beginning of CS215 constants and variables ***
+Public CS215_TRHData(2)
+Alias CS215_TRHData(1) = AirTC
+Alias CS215_TRHData(2) = RH
+Units AirTC = Deg C
+Units RH = %
+
+'*** End of CS215 constants and variables ***
+
+'*** Beginning of TB4 constants and variables ***
+Public Rain_mm
+Units Rain_mm = mm
+'*** End of TB4 constants and variables ***
+
+
+
+'****''''''''''''''''''''''Tables''''''''''''''''''''''''''''****
+'*** Output data tables ***
+'CS616
+DataTable (SN12211,TRUE,-1)
+'CardOut(0,-1)
+  DataInterval (0,OUTPUT_INTERVAL,Min,0)
+  TableFile ("CRD:DoveField1Min",8,1000,0,7,Day,0,0)
+  '107Loutput'
+  Average(NMBR_S107L,T107_C(1),IEEE4,0)
+  '107Loutput
+  '*** Beginning of CS616 output data ***
+  Average (NMBR_CS616,soil_water(1),IEEE4,0)
+  Average (NMBR_CS616,cs616_wcr(1),IEEE4,0)
+  '*** End of CS616 output data ***
+'air T and RH
+Average(1,AirTC,FP2,False)
+Sample(1,RH,FP2)
+' raingauge
+Totalize(1,Rain_mm,IEEE4,0)
+
+EndTable
+
+'*** Program ***
+BeginProg
+
+ Scan (1,Sec,3,0)
+
+    '*** Beginning of CS616 measurements ***
+    CS616 (cs616_wcr,NMBR_CS616,CS616_ANALOG_INPUT,CS616_POWER_CTRL,1,1,0)
+    'Apply temperature correction to CS616 period and find volumetric water content.
+    For ii = 1 To NMBR_CS616 'NMBR_TCAV must equal NMBR_CS616   
+        soil_water(ii) = -0.0663+cs616_wcr(ii)*(-0.0063+cs616_wcr(ii)*0.0007)
+    Next ii
+    
+'    CallTable CS616_12211
+    '*** End of CS616 measurements ****
+
+    '*** Beginning of 107L measurements ***
+    'Const S107L_VxINPUT = Ex3
+    'Const S107L_SEINPUT = 39
+    Therm107(T107_C(1),1,9,Ex1,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(2),1,10,Ex1,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(3),1,11,Ex2,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(4),1,12,Ex2,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(5),1,13,Ex3,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(6),1,14,Ex3,0,_60Hz,1.0,0.0)
+    Therm107(T107_C(7),1,15,Ex3,0,_60Hz,1.0,0.0)
+
+	'CallTable(SN12211_backup)
+    '*** End of 107L measurements ***
+
+'*** Beginning of CS215 measurements ***
+    SDI12Recorder(CS215_TRHData(),CS215_C_INPUT,"0","M!",1,0)
+'*** End of CS215 measurements ***
+
+
+ '*** Beginning of TB4 measurements ***
+    PulseCount(Rain_mm,1,TB4_INPUT,2,0,0.254,0)
+    '*** End of TB4 measurements ***
+    CallTable(SN12211)
+
+ NextScan
+EndProg 

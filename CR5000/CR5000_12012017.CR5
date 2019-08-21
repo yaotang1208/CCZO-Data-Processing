@@ -1,0 +1,366 @@
+'================================================================
+'
+' Data Sampling Program for the Campbell Scientific CR5000 logger
+'03 Nov 2016
+'version 7 for CCZO only with installed sensors
+'Contributer: Yao Tang, tangyao1208@gatech.edu
+'delete HFP01 and 107L
+'Combine 1min output to one table
+'Combine 30min output to one table
+'Check cnr4_data and cnr4_Ts
+'Rainfall also outputs every minute.
+
+'Start of Constants Customization Section
+'The following sensors are measured:
+'
+'Const SENSOR_CNR_4       = TRUE  'CNR 4                     net radiometer
+'Const SENSOR_CS616       = TRUE  'CS616                     water content reflectometers (volumetric soil moisture)
+'Const SENSOR_CS215       = TRUE   'CS215                    temperature and relative humidity sensor
+'Const SENSOR_TB4         = TRUE   'TB4                      TB4 and TB4mm Rain Gages
+'Const SENSOR_SI111       = TRUE   'SI111                    SI-111 Precision Infrared Radiometer
+
+'Const FIND_DIAG_BITS     = TRUE   'Set to TRUE to find individual diagnostic bits.
+'End of Constants Customization Section
+
+' The sign convention for the fluxes is positive away from the surface and
+'negative towards the surface.
+'
+' Before computing online fluxes, the datalogger will introduce lags into the
+'eddy covariance data to account for the fixed instrument delays. The lags are
+'dependent on the instrument setting and/or the scan interval. Search for "Fixed
+'inherent lag" and set the delay to the appropriate value. The raw data is not
+'lagged.
+'
+' The site attendant must load in several constants and calibration values.
+'Search for the text string "unique" to find the locations where unique
+'constants and calibration values are entered.
+
+
+'*** Unit Definitions ***
+
+'Symbol   Units
+'C        Celsius
+'degrees  degrees (angle)
+'g        grams
+'J        Joules
+'kg       kilograms
+'kPa      kilopascals
+'m        meters
+'mg       milligrams
+'mmol     millimoles
+'mol      moles
+'s        seconds
+'umol     micromols
+'uSeconds microseconds
+'V        volts
+'W        Watts
+
+
+'*** Station constants.
+Const SCAN_INTERVAL = 1  'Unique value 1s, measurement rate 100 ms (10 Hz) or 50 ms (20 Hz).
+Const OUTPUT_INTERVAL = 1 'Unique value, online flux data output interval in minutes.
+Dim i As Long                                            'Main scan index variable.
+Dim ii As Long                                           'Slow sequence scan index variable.
+
+'*** Wiring Instructions********
+'***CNR 4 Wiring Instructions*****
+Const CNR4_NRInput = 1
+Const CNR4_EC = Ix1
+Const CNR4_TInput = 5
+'
+'ANALOG CHANNELS
+'1H CNR4 Pyranometer Upper signal (red)
+'1L CNR4 Pyranometer Upper signal reference (blue)
+'gnd jumper to 1L
+'
+'2H CNR4 Pyranometer Lower signal (white)
+'2L CNR4 Pyranometer Lower signal reference (thin black)
+'gnd jumnper to 2L
+'
+'3H CNR4 Pyrgeometer Upper signal (grey)
+'3L CNR4 Pyrgeometer Upper signal reference (yellow)
+'gnd jumper to 3L
+'
+'4H CNR4 Pyrgeometer Lower signal (brown)
+'4L CNR4 Pyrgeometer Lower signal reference (green)
+'gnd jumper to 4L
+' CNR4 shield (clear)
+'
+'
+'5H CNR4 PRT (Pt-100) signal (green)
+'5L CNR4 PRT (Pt-100) signal reference (yellow)
+'gnd CNR4 PRT (Pt-100) shield (clear)
+'
+'CURRENT EXCITATION
+'IX1 CNR4 PRT (Pt-100) current excitation (grey)
+'
+'IXR CNR4 PRT (Pt-100) current excitation return (brown)
+'
+'CNR4 sensor
+'*** End of CNR 4 wiring ***
+
+'*** CS616 wiring ***
+'Only install one CS616
+Const CS616_ANALOG_INPUT = 27       'Unique single-ended analog input channel.
+Const CS616_POWER_CTRL = 4          'Unique control port.
+Const NMBR_CS616 = 1                'Unique number of CS616 to measure.
+'*** Beginning of CS616 wiring ***
+'14H      Signal #1 (green)
+'14L      Signal #2 (green) (neglecting Signal #2) if only install 1 sensor
+'C4      Power control #1 (orange)
+'        Power control #2 (orange)
+'G       Shield #1 (clear)
+'        Shield #2 (clear)
+
+'12V     Power #1 (red)
+'        Power #2 (red)
+'G       Signal reference #1 (black)
+'        Signal reference #2 (black)
+'*** End of CS616 wiring ***
+
+'**** CS215***
+Const CS215_ANALOG_INPUT = 1         'Unique differential analog input channel.
+'*** Beginning of CS215 wiring ***
+' Color   Function           CR5000
+' -----   --------           -------
+' Red     Power (12V)         12V
+' Green   SDI-12 signal       C1
+' Black   Power ground         G
+' White   Power ground         G
+' Clear   Shield          Signal Ground (C1 Ground)
+'*** End of CS215 wiring ***
+
+'****SENSOR_TB4*** 
+
+Const TB4_INPUT = 1         'Unique differential analog input channel.
+'*** Beginning of TB4 wiring ***
+' Color   Function                   Pulse Channel CR5000
+' -----   --------                       -------
+' Black   Rain signal             P,P_SW, or U (pulse channel)
+' White  Rain signal reference         AG or downward (Analog ground)
+' Clear  Shield                         AG or downward
+'*** End of TB4 wiring ***
+
+'SENSOR_SI111
+Const SI111_DIFFINPUT = 11         'Unique differential analog input channel.
+Const SI111_SEINPUT = 40           'Unique SE input channel
+Const SI111_VEINPUT = Vx2	           'Unique Vx input channel
+'*** Beginning of SI111 wiring ***
+' Color   Function                Pulse Channel CR5000
+'       SI-111 Thermopile              -------
+' Red      Diff.High                     11H
+' Black    Diff.Low                      11L    
+' Clear    Analog Ground                 AG 
+'      SI-111 Thermistor               -------
+' Green      Singled-ended               SE40
+' Blue       Analog Ground               AG    
+' White      Exicitation                 VX2 
+'*** End of SI111 wiring ***
+
+'POWER IN
+'12V     datalogger (red)
+'G       datalogger (black)
+
+
+'EXTERNAL POWER SUPPLY
+'+12V    datalogger (red)
+'G       datalogger (black)
+
+'*** Beginning of CNR 4 constants and variables ***
+Public logger_temp, batt_volt
+Public cnr4(4)
+Alias cnr4(1) = short_up
+Alias cnr4(2) = short_dn
+Alias cnr4(3) = long_up
+Alias cnr4(4) = long_dn
+Public cnr4_T_C 'CNR4 thermistor temperature in Celcius
+Public cnr4_T_K 'CNR4 thermistor temperature in Kelvin
+Public long_up_corr 'Downwelling long-wave radiation with temperature correction
+Public long_dn_corr 'Upwelling long-wave radiation with temperature correction
+Public Rs_net 'short-wave net radiation
+Public Rl_net 'long-wave net radiation
+Public albedo 'Albedo
+Public Rn 'total net radiation
+Units logger_temp = degC
+Units batt_volt = volts
+Units short_up = W/m^2
+Units short_dn = W/m^2
+Units long_up = W/m^2
+Units long_dn = W/m^2
+Units cnr4_T_C = deg_C
+Units cnr4_T_K = K
+Units long_up_corr = W/m^2
+Units long_dn_corr = W/m^2
+Units Rs_net = W/m^2
+Units Rl_net = W/m^2
+Units albedo = W/m^2
+Units Rn = W/m^2
+Dim cnr4_prt_R, Rs_R0
+'CNR4 sensitivities: refer to the Certificate of Calibration from Kipp & Zonen for sensitivity values
+'for each probes, and enter them below.
+Const pyranometer_up_sensitivity = 10.30 'unique sensitivity for upper pyranometer '(microV/W/m^2)
+Const pyranometer_dn_sensitivity = 10.30 'unique sensitivity for lower pyranometer '(microV/W/m^2)
+Const pyrgeometer_up_sensitivity = 12.09 'unique sensitivity for upper pyrgeometer '(microV/W/m^2)
+Const pyrgeometer_dn_sensitivity = 12.09 'unique sensitivity for lower pyrgeometer '(microV/W/m^2)
+'CNR4 multipliers
+Public cnr4_mult(4)
+Const pyranometer_up_mult = 1000/pyranometer_up_sensitivity '(W/m^2/mV)
+Const pyranometer_dn_mult = 1000/pyranometer_dn_sensitivity '(W/m^2/mV)
+Const pyrgeometer_up_mult = 1000/pyrgeometer_up_sensitivity '(W/m^2/mV)
+Const pyrgeometer_dn_mult = 1000/pyrgeometer_dn_sensitivity '(W/m^2/mV)
+'*** End of CNR 4 constants and variables ***
+
+
+'*** Beginning of CS616 constants and variables ***
+Public cs616_wcr(NMBR_CS616)           'Water content reflectometer period.
+Public soil_water(NMBR_CS616)        'Volumetric soil water content 
+Dim cs616_T(NMBR_CS616)                'Water content reflectometer period.
+Units cs616_wcr = uSeconds
+Units soil_water = frac_v_wtr
+'*** End of CS616 constants and variables ***
+
+'*** Beginning of CS215 constants and variables ***
+Public CS215_TRHData(2)
+Alias CS215_TRHData(1) = AirTC
+Alias CS215_TRHData(2) = RH
+Units AirTC = Deg C
+Units RH = %
+'*** End of CS215 constants and variables ***
+
+'*** Beginning of TB4 constants and variables ***
+Public Rain_mm
+Units Rain_mm = mm
+'*** End of TB4 constants and variables ***
+
+'*** Beginning of SI111 constants and variables ***
+Public PanelT, BattV, SBTempC, SBTempK, TargmV, m, b, TargTempK, TargTempC
+'***************ATTENTION
+'SN:SI-111-5783
+'Declare constants (replace the listed values with coefficients received with sensor)
+Const mC2 = 96630.5
+Const mC1 = 8303050
+Const mC0 = 1438870000
+Const bC2 = 3302.07
+Const bC1 = 192496
+Const bC0 = -3518730
+'*** End of SI111 constants and variables ***
+
+'****''''''''''''''''''''''Tables''''''''''''''''''''''''''''****
+'*** Output data tables ***
+
+'Define 1min_data Data Tables
+DataTable (data_1min,True,-1)
+CardOut(0,-1)
+DataInterval (0,OUTPUT_INTERVAL,Min,0)
+Minimum (1,batt_volt,FP2,0,False)
+Sample (1,logger_temp,FP2)
+'cnr4 data
+Average (4,cnr4(1),IEEE4,False)
+Average (1,cnr4_T_C,IEEE4,False)
+Average (1,cnr4_T_K,IEEE4,False)
+Average (1,long_up_corr,IEEE4,False)
+Average (1,long_dn_corr,IEEE4,False)
+Average (1,Rs_net,IEEE4,False)
+Average (1,Rl_net,IEEE4,False)
+Average (1,albedo,IEEE4,False)
+Average (1,Rn,IEEE4,False)
+'air T and RH
+Average(1,AirTC,FP2,False)
+Sample(1,RH,FP2)
+'infrared temp
+  Sample (1,PanelT,FP2)
+  Average (1,TargmV,FP2,False)
+  Average (1,SBTempC,FP2,False)
+  Average (1,TargTempC,FP2,False)
+'soil moisture
+Average (NMBR_CS616,soil_water(1),IEEE4,0)
+Average (NMBR_CS616,cs616_wcr(1),IEEE4,0)
+' Rainfall
+Totalize(1,Rain_mm,IEEE4,0)
+EndTable
+'End of data_1min Data Tables
+
+'***END of Define Table***'
+
+'*** Program ***
+
+BeginProg
+
+    cnr4_mult(1) = pyranometer_up_mult
+    cnr4_mult(2) = pyranometer_dn_mult
+    cnr4_mult(3) = pyrgeometer_up_mult
+    cnr4_mult(4) = pyrgeometer_dn_mult
+ 
+  Scan (1,Sec,3,0)
+    'Measure battery voltage.
+    Battery (batt_volt)
+    
+    '*** Beginning of CNR 4 measurements ***
+    PanelTemp (logger_temp,250)
+    'CNR4 radiation measurements
+    VoltDiff (cnr4(),4,mV20C,CNR4_NRInput,True ,0,_60Hz,cnr4_mult(),0)
+   'PRT (Pt-100) temperature measurement
+    Resistance (cnr4_prt_R,1,mV200,CNR4_TInput,CNR4_EC,1,1500,True,True,0,_60Hz,1,0)
+    Rs_R0 = cnr4_prt_R/100
+    PRT (cnr4_T_C,1,Rs_R0,1,0)
+    'Convert CNR4 temperature to Kelvin
+    cnr4_T_K = cnr4_T_C+273.15
+    'Correct the long-wave radiation values from pyrgeometers
+    long_up_corr = long_up+5.67e-8*cnr4_T_K^4
+    long_dn_corr = long_dn+5.67e-8*cnr4_T_K^4
+    'Compute short-wave net radiation
+    Rs_net = short_up - short_dn
+   'Compute long-wave net radiation
+    Rl_net = long_up - long_dn
+   'Compute albedo
+    albedo = short_dn/short_up
+   'Compute net radiation
+    Rn = Rs_net + Rl_net
+    '*** End of CNR 4 measurements ***
+            
+    '*** Beginning of CS616 measurements ***
+    CS616 (cs616_wcr(1),NMBR_CS616,CS616_ANALOG_INPUT,CS616_POWER_CTRL,NMBR_CS616,1,0)
+    
+    For ii = 1 To NMBR_CS616  
+        cs616_T(ii) = cs616_wcr(ii)
+        soil_water(ii) = -0.0663+cs616_T(ii)*(-0.0063+cs616_T(ii)*0.0007)
+    Next ii
+    
+   '*** End of CS616 and HFP01 measurements ****
+    
+    '*** Beginning of CS215 measurements ***
+    SDI12Recorder(CS215_TRHData(),CS215_ANALOG_INPUT,"0","M!",1,0)
+    '*** End of CS215 measurements ***
+
+    '*** Beginning of SI111 measurements ***
+	'Const SI111_DIFFINPUT = 11         'Unique differential analog input channel.
+	'Const SI111_SEINPUT = 40           'Unique SE input channel
+	'Const SI111_VEINPUT = Vx2	           'Unique Vx input channel
+       'Instruction to measure sensor body temperature (green wire to SE40, white wire to VX2,
+      'blue wire to ground)
+      Therm109 (SBTempC,1,SI111_SEINPUT,SI111_VEINPUT,0,_60Hz,1.0,0)
+      'Instruction to measure mV output of thermopile detector (red wire to 2H, black wire to 2L,
+      'clear wire to ground)
+      VoltDiff (TargmV,1,mV20,SI111_DIFFINPUT,True ,0,_60Hz,1.0,0)
+      'Calculation of m (slope) and b (intercept) coefficients for target temperature calculation
+      m = mC2 * SBTempC^2 + mC1 * SBTempC + mC0
+      b = bC2 * SBTempC^2 + bC1 * SBTempC + bC0
+      'Calculation of target temperature
+      SBTempK = SBTempC + 273.15
+      TargTempK = ((SBTempK^4) + m * TargmV + b)^0.25
+      TargTempC = TargTempK - 273.15
+      'Call output tables
+    '*** End of SI111 measurements ***
+    '*** Beginning of TB4 measurements ***
+    PulseCount(Rain_mm,1,TB4_INPUT,2,0,0.254,0)
+    '*** End of TB4 measurements ***
+    '*****output of 1 min table'
+	CallTable data_1min	
+
+    '*** Beginning of TB4 measurements ***
+    'PulseCount(Rain_mm,1,TB4_INPUT,2,0,0.254,0)
+    'CallTable(TB4_mm)
+    '*** End of TB4 measurements ***
+
+    NextScan
+EndProg
